@@ -10,6 +10,7 @@ const jwt = require("jsonwebtoken");
 
 // User Model Login
 const User = require ("./models/user-model");
+const { authenticateToken } = require("./utilities");
 
 // Koneksi ke database
 mongoose.connect(config.connectionString)
@@ -98,6 +99,21 @@ app.post("/login", async (req,res) =>{
     });
 
 
+});
+
+// Bagian GET user
+app.get("/get-user", authenticateToken, async (req,res) =>{
+    const {userId} = req.user;
+    const isUser = await User.findOne({_id:userId});
+
+    if(!isUser){
+        return res.sendStatus(401);
+    }
+    return res.json({
+        user: isUser,
+        message: " ",
+
+    });
 });
 
 app.listen(2000);
