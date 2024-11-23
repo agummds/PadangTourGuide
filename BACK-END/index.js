@@ -10,6 +10,7 @@ const jwt = require("jsonwebtoken");
 
 // User Model Login
 const User = require ("./models/user-model");
+const NameDescription = require ("./models/description-model");
 const { authenticateToken } = require("./utilities");
 
 // Koneksi ke database
@@ -115,6 +116,39 @@ app.get("/get-user", authenticateToken, async (req,res) =>{
 
     });
 });
+
+// Bagian Deskripsi Tempat Wisata
+app.post("/rute-peta/add-description", authenticateToken, async (req, res) => {
+    const { destinationName, description, imageUrl } = req.body;
+    const { userId } = req.user;
+
+    // Validasi data input
+    if (!destinationName || !description || !imageUrl) {
+        return res.status(400).json({ error: true, message: "All fields are required!" });
+    }
+
+    try {
+        // Memeriksa apakah destinationName sudah ada di database
+        const existingDestination = await NameDescription.findOne({ destinationName });
+        if (existingDestination) {
+            return res.status(400).json({ error: true, message: "Nama Destinasi Sudah Ada" });
+        }
+
+        // Menyimpan data baru
+        const nameDescription = new NameDescription({
+            imageUrl,
+            destinationName,
+            description,
+            userId, // Menyimpan userId sebagai pemilik data jika diperlukan
+        });
+        await nameDescription.save();
+
+        res.status(201).json({ description: nameDescription, message: "Berhasil Ditambahkan" });
+    } catch (error) {
+        res.status(500).json({ error: true, message: error.message });
+    }
+});
+
 
 app.listen(2000);
 module.exports = app;
