@@ -18,12 +18,12 @@ const app =express()
 app.use(express.json());
 app.use(cors({origin: "*"}))
 
-// Buat Akun
+// Buat Akun(Sign In)
 app.post("/create-account", async (req,res) =>{
     //return res.status(200).json({message:"hello"});
-    const {fullName, email, password} = req.body;
+    const {fullName, PhoneNum,email, password} = req.body;
 
-    if(!fullName || !email || !password){
+    if(!fullName ||!PhoneNum || !email || !password){
         return res
         .status(400)
         .json ({ error : true, message : "All fields are required"});
@@ -40,6 +40,7 @@ app.post("/create-account", async (req,res) =>{
 
     const user = new User({
         fullName,
+        PhoneNum,
         email,
         password : hashedPassword,
     });
@@ -56,10 +57,27 @@ app.post("/create-account", async (req,res) =>{
 
     return res.status(201).json({
         error:false,
-        user:{fullName:user.fullName, email:user.email},
+        user:{fullName:user.fullName,PhoneNum:user.PhoneNum, email:user.email},
         accessToken,
         message : "Registrasi Berhasil!!",
     })
+});
+
+// Bagian Log In
+app.post("/login", async (req,res) =>{
+
+    const {email, password} = req.body;
+
+    if (!email || !password){
+        return res.status(400).json ({message : "Email dan Password are Required!"})
+    }
+
+    const user = await User.findOne ({email})
+    if (!user){
+        return res.status(400).json ({message : "User Tidak Ditemukan!"})
+    }
+
+
 });
 
 app.listen(2000);
