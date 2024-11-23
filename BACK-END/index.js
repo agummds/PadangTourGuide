@@ -74,8 +74,28 @@ app.post("/login", async (req,res) =>{
 
     const user = await User.findOne ({email})
     if (!user){
-        return res.status(400).json ({message : "User Tidak Ditemukan!"})
+        return res.status(400).json ({message : "User atau Password Tidak Valid!"})
     }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password)
+    if (!isPasswordValid){
+        return res.status(400).json({message: "User atau Password Tidak Valid!"})
+    }
+
+    const accessToken = jwt.sign(
+        {userId:user._id},
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: "80h",
+        }
+    );
+
+    return res.json({
+        error : false,
+        message : "Log-In Berhasil!",
+        user : {fullName:user.fullName, email:user.email},
+        accessToken,
+    });
 
 
 });
