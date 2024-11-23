@@ -13,6 +13,8 @@ const User = require("./models/user-model");
 const NameDescription = require("./models/description-model");
 const UlasanRating = require("./models/ulasan_rating-model");
 const TempatWisata = require("./models/tempat_wisata-model");
+// const User = require("./models/favourite-model");
+
 const { authenticateToken } = require("./utilities");
 
 // Koneksi ke database
@@ -203,7 +205,7 @@ app.post(
 );
 
 // Menambahkan Tempat Wisata
-app.post("/tempat-wisata", authenticateToken, async (req, res) => {
+app.post("/add-tempat-wisata", authenticateToken, async (req, res) => {
   const { imageUrl, namaTempat, alamat, jamOperasi } = req.body;
   //   const { userId } = req.user;
 
@@ -232,6 +234,86 @@ app.post("/tempat-wisata", authenticateToken, async (req, res) => {
     await tempatWisata.save();
 
     res.status(201).json({ message: "Berhasil Ditambahkan", tempatWisata });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// GET All Tempat Wisata
+app.post("/add-favorite", authenticateToken, async (req, res) => {
+  const { tempatWisataId } = req.body;
+  const { userId } = req.user;
+
+  try {
+    // Pastikan tempat wisata ada
+    const tempatWisata = await TempatWisata.findById(tempatWisataId);
+    if (!tempatWisata) {
+      return res.status(404).json({ error: true, message: "Tempat wisata tidak ditemukan" });
+    }
+
+    // Cari pengguna
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
+    }
+
+    // Pastikan favorit terinisialisasi
+    if (!Array.isArray(user.favorit)) {
+      user.favorit = [];
+    }
+
+    // Cek apakah tempat wisata sudah ada di daftar favorit
+    if (user.favorit.includes(tempatWisataId)) {
+      return res.status(400).json({ error: true, message: "Destinasi sudah ada di daftar favorit" });
+    }
+
+    // Tambahkan ke favorit
+    user.favorit.push(tempatWisataId);
+    await user.save();
+
+    res.status(200).json({ success: true, message: "Destinasi berhasil ditambahkan ke favorit" });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Melihat Destinasi Favourite
+app.get("/favorites", authenticateToken, async (req, res) => {
+  const { userId } = req.user;
+
+  try {
+    // Temukan pengguna dan populate data favorit
+    const user = await User.findById(userId).populate("favorit");
+    if (!user) {
+      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
+    }
+
+    res.status(200).json({
+      success: true,
+      favorites: user.favorit, // Daftar favorit sudah terisi data lengkap
+    });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Delete Destinasi Favourite
+app.delete("/remove-favorite", authenticateToken, async (req, res) => {
+  const { tempatWisataId } = req.body;
+  const { userId } = req.user;
+
+  try {
+    // Cari pengguna
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
+    }
+
+    // Hapus destinasi dari daftar favorit
+    user.favorit = user.favorit.filter((id) => id.toString() !== tempatWisataId);
+    await user.save();
+
+    res.status(200).json({ success: true, message: "Destinasi berhasil dihapus dari favorit" });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
