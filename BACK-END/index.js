@@ -180,5 +180,11 @@ app.post("/rute-peta/add-rating-ulasan", authenticateToken, async (req, res) =>{
     }
 });
 
+// Bagian Lihat Semua Tempat Wisata
+app.post("/tempat-wisata", authenticateToken, async (req, res) =>{
+    
+
+});
+
 app.listen(2000);
 module.exports = app;

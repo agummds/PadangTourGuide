@@ -6,6 +6,7 @@ const descriptionSchema = new Schema({
   description: { type: String, require: true},
   //descriptionDate : {type :Date, require: true},
   imageUrl : {type: String, require: true},
+  isFavourite : {type: Boolean, default : false},
 });
 
 module.exports = mongoose.model("NameDescription", descriptionSchema);
