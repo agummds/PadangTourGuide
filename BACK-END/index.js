@@ -11,6 +11,7 @@ const jwt = require("jsonwebtoken");
 // User Model Login
 const User = require ("./models/user-model");
 const NameDescription = require ("./models/description-model");
+const UlasanRating = require ("./models/ulasan_rating-model");
 const { authenticateToken } = require("./utilities");
 
 // Koneksi ke database
@@ -149,6 +150,35 @@ app.post("/rute-peta/add-description", authenticateToken, async (req, res) => {
     }
 });
 
+// Bagian Ulasan dan Rating Tempat Wisata
+app.post("/rute-peta/add-rating-ulasan", authenticateToken, async (req, res) =>{
+    const { UserName, Ulasan, Rating } = req.body;
+    const { userId } = req.user;
+
+    if (!UserName || !Ulasan || !Rating) {
+        return res.status(400).json({ error: true, message: "All fields are required!" });
+    }
+
+    // Supaya Tidak Terjasi Spam Ulasan yang sama Oleh User yang sama
+    try {
+    // Memeriksa apakah destinationName sudah ada di database
+    const existingUlasan = await UlasanRating.findOne({ UserName });
+    if (existingUlasan) {
+        return res.status(400).json({ error: true, message: "Anda Sudah Memberikan Ulsan ini!" });
+    }
+    // Menyimpan data baru
+    const ulasanRating = new UlasanRating({
+        UserName,
+        Ulasan,
+        Rating,
+        userId, // Menyimpan userId sebagai pemilik data jika diperlukan
+        });
+    await ulasanRating.save();
+    res.status(201).json({ description: ulasanRating, message: "Ulasan dan Rating Berhasil Ditambahkan!" });
+    } catch (error) {
+        res.status(500).json({ error: true, message: error.message });
+    }
+});
 
 app.listen(2000);
 module.exports = app;
