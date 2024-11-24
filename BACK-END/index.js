@@ -13,6 +13,7 @@ const User = require("./models/user-model");
 const NameDescription = require("./models/description-model");
 const UlasanRating = require("./models/ulasan_rating-model");
 const TempatWisata = require("./models/tempat_wisata-model");
+const EventLokal = require ("./models/event-model");
 // const User = require("./models/favourite-model");
 
 const { authenticateToken } = require("./utilities");
@@ -345,11 +346,53 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
   }
 });
 
+
+// Menambahkan Event Lokal
+app.post(
+  "/add-event-lokal",
+  authenticateToken,
+  async (req, res) => {
+    const { imageUrl, eventName, tentangEvent} = req.body;
+    const { userId } = req.user;
+
+    if ( !imageUrl || !eventName || !tentangEvent) {
+      return res
+        .status(400)
+        .json({ error: true, message: "All fields are required!" });
+    }
+
+    // Supaya Tidak Terjasi Spam Event yang sama
+    try {
+      // Memeriksa apakah eventName sudah ada di database
+      const existingEvent = await EventLokal.findOne({ eventName });
+      if (existingEvent) {
+        return res
+          .status(400)
+          .json({ error: true, message: "Anda ini Sudah Ada!" });
+      }
+      // Menyimpan data baru
+      const eventLokal = new EventLokal({
+        imageUrl,
+        eventName,
+        tentangEvent,
+        userId, // Menyimpan userId sebagai pemilik data jika diperlukan
+      });
+      await eventLokal.save();
+      res.status(201).json({
+        description: eventLokal,
+        message: "Event Lokal Berhasil Ditambahkan!",
+      });
+    } catch (error) {
+      res.status(500).json({ error: true, message: error.message });
+    }
+  }
+);
+
 // Bagian Ganti Password
 app.post('/ganti-password', authenticateToken, async (req, res) => {
   const { passwordLama, passwordBaru } = req.body;
   const { userId } = req.user;
-  const isUser = await User.findOne({ _id: userId });
+  // const isUser = await User.findOne({ _id: userId });
   // Validasi input
   if (!passwordLama || !passwordBaru) {
     return res.status(400).json({ error: true, message: 'Password lama dan baru diperlukan.' });
@@ -380,7 +423,6 @@ app.post('/ganti-password', authenticateToken, async (req, res) => {
     res.status(500).json({ error: true, message: error.message });
   }
 });
-
 
 // Menambahkan Bagian Log-Out
 app.post('/logout', authenticateToken, (req, res) => {
