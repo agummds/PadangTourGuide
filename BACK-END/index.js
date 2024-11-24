@@ -13,10 +13,10 @@ const User = require("./models/user-model");
 const NameDescription = require("./models/description-model");
 const UlasanRating = require("./models/ulasan_rating-model");
 const TempatWisata = require("./models/tempat_wisata-model");
-const EventLokal = require ("./models/event-model");
+const EventLokal = require("./models/event-model");
 // const User = require("./models/favourite-model");
 
-const { authenticateToken } = require("./utilities");
+const { authenticateToken, authorizeAdmin } = require("./utilities");
 
 // Koneksi ke database
 mongoose.connect(config.connectionString);
@@ -25,7 +25,123 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: "*" }));
 
-// Buat Akun(Sign In)
+// Bagian Khusus Admin
+// Create Account Admin
+app.post("/create-admin", async (req, res) => {
+  const { fullName, PhoneNum, email, password, role } = req.body;
+
+  // Cek apakah sudah ada admin di database
+  const adminExist = await User.findOne({ role: "admin" });
+
+  // Jika belum ada admin, izinkan pembuatan admin pertama tanpa autentikasi
+  if (!adminExist) {
+    if (!fullName || !PhoneNum || !email || !password) {
+      return res
+        .status(400)
+        .json({ error: true, message: "Semua kolom wajib diisi." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const admin = new User({
+      fullName,
+      PhoneNum,
+      email,
+      password: hashedPassword,
+      role: "admin",
+    });
+
+    await admin.save();
+    return res
+      .status(201)
+      .json({ error: false, message: "Admin pertama berhasil dibuat!", admin });
+  }
+
+  // Proses normal untuk pembuatan admin, hanya admin yang sudah login dapat mengakses
+  const { userId } = req.user;
+
+  const currentUser = await User.findById(userId);
+  if (!currentUser || currentUser.role !== "admin") {
+    return res
+      .status(403)
+      .json({
+        error: true,
+        message: "Akses ditolak. Hanya admin yang dapat membuat akun admin.",
+      });
+  }
+
+  if (!fullName || !PhoneNum || !email || !password || !role) {
+    return res
+      .status(400)
+      .json({ error: true, message: "Semua kolom wajib diisi." });
+  }
+
+  const isUser = await User.findOne({ email });
+  if (isUser) {
+    return res
+      .status(400)
+      .json({ error: true, message: "Email sudah digunakan." });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const admin = new User({
+    fullName,
+    PhoneNum,
+    email,
+    password: hashedPassword,
+    role: "admin",
+  });
+
+  await admin.save();
+  res
+    .status(201)
+    .json({ error: false, message: "Akun Admin berhasil dibuat!", admin });
+});
+
+// Bagian Admin Log-In
+app.post("/admin-login", async (req, res) => {
+  const { email, password } = req.body;
+
+  // Validasi input
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email dan Password harus diisi!" });
+  }
+
+  try {
+    // Cari user berdasarkan email
+    const user = await User.findOne({ email });
+
+    // Cek apakah user ada dan merupakan admin
+    if (!user || user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ message: "Akses ditolak. Bukan akun admin!" });
+    }
+
+    // Validasi password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ message: "Email atau password salah!" });
+    }
+
+    // Buat access token khusus admin
+    const accessToken = jwt.sign(
+      { userId: user._id, role: user.role }, // Tambahkan role ke payload
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "80h" }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Login admin berhasil!",
+      admin: { fullName: user.fullName, email: user.email },
+      accessToken,
+    });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Buat Akun User(Sign In)
 app.post("/create-account", async (req, res) => {
   //return res.status(200).json({message:"hello"});
   const { fullName, PhoneNum, email, password } = req.body;
@@ -50,16 +166,15 @@ app.post("/create-account", async (req, res) => {
     PhoneNum,
     email,
     password: hashedPassword,
+    role: "user", // Untuk Default role
   });
 
   await user.save();
 
   const accessToken = jwt.sign(
-    { userId: user._id },
+    { userId: user._id, role: user.role }, // Tambahkan role ke dalam payload
     process.env.ACCESS_TOKEN_SECRET,
-    {
-      expiresIn: "80h",
-    }
+    { expiresIn: "80h" }
   );
 
   return res.status(201).json({
@@ -111,58 +226,78 @@ app.post("/login", async (req, res) => {
 });
 
 // Bagian GET user
-app.get("/get-user", authenticateToken, async (req, res) => {
-  const { userId } = req.user;
-  const isUser = await User.findOne({ _id: userId });
-
-  if (!isUser) {
-    return res.sendStatus(401);
-  }
-  return res.json({
-    user: isUser,
-    message: " ",
-  });
-});
-
-// Bagian Deskripsi Tempat Wisata
-app.post("/rute-peta/add-description", authenticateToken, async (req, res) => {
-  const { destinationName, description, imageUrl } = req.body;
-  const { userId } = req.user;
-
-  // Validasi data input
-  if (!destinationName || !description || !imageUrl) {
-    return res
-      .status(400)
-      .json({ error: true, message: "All fields are required!" });
-  }
-
+// GET All Users
+app.get("/get-user", authenticateToken, authorizeAdmin, async (req, res) => {
   try {
-    // Memeriksa apakah destinationName sudah ada di database
-    const existingDestination = await NameDescription.findOne({
-      destinationName,
-    });
-    if (existingDestination) {
+    // Ambil semua data pengguna dari database
+    const users = await User.find({}, "-password"); // Exclude password dari hasil query untuk keamanan
+
+    // Jika tidak ada data pengguna
+    if (!users || users.length === 0) {
       return res
-        .status(400)
-        .json({ error: true, message: "Nama Destinasi Sudah Ada" });
+        .status(404)
+        .json({ error: true, message: "Tidak ada pengguna ditemukan." });
     }
 
-    // Menyimpan data baru
-    const nameDescription = new NameDescription({
-      imageUrl,
-      destinationName,
-      description,
-      userId, // Menyimpan userId sebagai pemilik data jika diperlukan
+    // Kirim respons dengan daftar pengguna
+    res.status(200).json({
+      success: true,
+      message: "Daftar pengguna berhasil diambil.",
+      data: users,
     });
-    await nameDescription.save();
-
-    res
-      .status(201)
-      .json({ description: nameDescription, message: "Berhasil Ditambahkan" });
   } catch (error) {
+    // Tangani error
     res.status(500).json({ error: true, message: error.message });
   }
 });
+
+// Bagian Deskripsi Tempat Wisata
+app.post(
+  "/rute-peta/add-description",
+  authenticateToken,
+  authorizeAdmin,
+  async (req, res) => {
+    const { destinationName, description, imageUrl } = req.body;
+    const { userId } = req.user;
+
+    // Validasi data input
+    if (!destinationName || !description || !imageUrl) {
+      return res
+        .status(400)
+        .json({ error: true, message: "All fields are required!" });
+    }
+
+    try {
+      // Memeriksa apakah destinationName sudah ada di database
+      const existingDestination = await NameDescription.findOne({
+        destinationName,
+      });
+      if (existingDestination) {
+        return res
+          .status(400)
+          .json({ error: true, message: "Nama Destinasi Sudah Ada" });
+      }
+
+      // Menyimpan data baru
+      const nameDescription = new NameDescription({
+        imageUrl,
+        destinationName,
+        description,
+        userId, // Menyimpan userId sebagai pemilik data jika diperlukan
+      });
+      await nameDescription.save();
+
+      res
+        .status(201)
+        .json({
+          description: nameDescription,
+          message: "Berhasil Ditambahkan",
+        });
+    } catch (error) {
+      res.status(500).json({ error: true, message: error.message });
+    }
+  }
+);
 
 // Bagian Ulasan dan Rating Tempat Wisata
 app.post(
@@ -206,39 +341,44 @@ app.post(
 );
 
 // Menambahkan Tempat Wisata
-app.post("/add-tempat-wisata", authenticateToken, async (req, res) => {
-  const { imageUrl, namaTempat, alamat, jamOperasi } = req.body;
-  //   const { userId } = req.user;
+app.post(
+  "/add-tempat-wisata",
+  authenticateToken,
+  authorizeAdmin,
+  async (req, res) => {
+    const { imageUrl, namaTempat, alamat, jamOperasi } = req.body;
+    //   const { userId } = req.user;
 
-  if (!imageUrl || !namaTempat || !alamat || !jamOperasi) {
-    return res
-      .status(400)
-      .json({ error: true, message: "All fields are required!" });
-  }
-  try {
-    // Memeriksa apakah destinationName sudah ada di database
-    const existingTempatWisata = await TempatWisata.findOne({ namaTempat });
-    if (existingTempatWisata) {
+    if (!imageUrl || !namaTempat || !alamat || !jamOperasi) {
       return res
         .status(400)
-        .json({ error: true, message: "Nama Destinasi Sudah Ada" });
+        .json({ error: true, message: "All fields are required!" });
     }
-    //const parsedJamOperasi = new Date(parseInt(jamOperasi));
+    try {
+      // Memeriksa apakah destinationName sudah ada di database
+      const existingTempatWisata = await TempatWisata.findOne({ namaTempat });
+      if (existingTempatWisata) {
+        return res
+          .status(400)
+          .json({ error: true, message: "Nama Destinasi Sudah Ada" });
+      }
+      //const parsedJamOperasi = new Date(parseInt(jamOperasi));
 
-    // Menyimpan data baru
-    const tempatWisata = new TempatWisata({
-      imageUrl,
-      namaTempat,
-      alamat,
-      jamOperasi,
-    });
-    await tempatWisata.save();
+      // Menyimpan data baru
+      const tempatWisata = new TempatWisata({
+        imageUrl,
+        namaTempat,
+        alamat,
+        jamOperasi,
+      });
+      await tempatWisata.save();
 
-    res.status(201).json({ message: "Berhasil Ditambahkan", tempatWisata });
-  } catch (error) {
-    res.status(500).json({ error: true, message: error.message });
+      res.status(201).json({ message: "Berhasil Ditambahkan", tempatWisata });
+    } catch (error) {
+      res.status(500).json({ error: true, message: error.message });
+    }
   }
-});
+);
 
 // GET All Tempat Wisata
 app.get("/tempat-wisata", authenticateToken, async (req, res) => {
@@ -265,44 +405,62 @@ app.get("/tempat-wisata", authenticateToken, async (req, res) => {
   }
 });
 
-
 // POST Tempat Wisata Favourite
-app.post("/add-favorite", authenticateToken, async (req, res) => {
-  const { tempatWisataId } = req.body;
-  const { userId } = req.user;
+app.post(
+  "/add-favorite",
+  authenticateToken,
+  authorizeAdmin,
+  async (req, res) => {
+    const { tempatWisataId } = req.body;
+    const { userId } = req.user;
 
-  try {
-    // Pastikan tempat wisata ada
-    const tempatWisata = await TempatWisata.findById(tempatWisataId);
-    if (!tempatWisata) {
-      return res.status(404).json({ error: true, message: "Tempat wisata tidak ditemukan" });
+    try {
+      // Pastikan tempat wisata ada
+      const tempatWisata = await TempatWisata.findById(tempatWisataId);
+      if (!tempatWisata) {
+        return res
+          .status(404)
+          .json({ error: true, message: "Tempat wisata tidak ditemukan" });
+      }
+
+      // Cari pengguna
+      const user = await User.findById(userId);
+      if (!user) {
+        return res
+          .status(404)
+          .json({ error: true, message: "Pengguna tidak ditemukan" });
+      }
+
+      // Pastikan favorit terinisialisasi
+      if (!Array.isArray(user.favorit)) {
+        user.favorit = [];
+      }
+
+      // Cek apakah tempat wisata sudah ada di daftar favorit
+      if (user.favorit.includes(tempatWisataId)) {
+        return res
+          .status(400)
+          .json({
+            error: true,
+            message: "Destinasi sudah ada di daftar favorit",
+          });
+      }
+
+      // Tambahkan ke favorit
+      user.favorit.push(tempatWisataId);
+      await user.save();
+
+      res
+        .status(200)
+        .json({
+          success: true,
+          message: "Destinasi berhasil ditambahkan ke favorit",
+        });
+    } catch (error) {
+      res.status(500).json({ error: true, message: error.message });
     }
-
-    // Cari pengguna
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
-    }
-
-    // Pastikan favorit terinisialisasi
-    if (!Array.isArray(user.favorit)) {
-      user.favorit = [];
-    }
-
-    // Cek apakah tempat wisata sudah ada di daftar favorit
-    if (user.favorit.includes(tempatWisataId)) {
-      return res.status(400).json({ error: true, message: "Destinasi sudah ada di daftar favorit" });
-    }
-
-    // Tambahkan ke favorit
-    user.favorit.push(tempatWisataId);
-    await user.save();
-
-    res.status(200).json({ success: true, message: "Destinasi berhasil ditambahkan ke favorit" });
-  } catch (error) {
-    res.status(500).json({ error: true, message: error.message });
   }
-});
+);
 
 // Melihat Destinasi Favourite
 app.get("/favorites", authenticateToken, async (req, res) => {
@@ -312,7 +470,9 @@ app.get("/favorites", authenticateToken, async (req, res) => {
     // Temukan pengguna dan populate data favorit
     const user = await User.findById(userId).populate("favorit");
     if (!user) {
-      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
+      return res
+        .status(404)
+        .json({ error: true, message: "Pengguna tidak ditemukan" });
     }
 
     res.status(200).json({
@@ -333,26 +493,38 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
     // Cari pengguna
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ error: true, message: "Pengguna tidak ditemukan" });
+      return res
+        .status(404)
+        .json({ error: true, message: "Pengguna tidak ditemukan" });
     }
 
     // Hapus destinasi dari daftar favorit
-    user.favorit = user.favorit.filter((id) => id.toString() !== tempatWisataId);
+    user.favorit = user.favorit.filter(
+      (id) => id.toString() !== tempatWisataId
+    );
     await user.save();
 
-    res.status(200).json({ success: true, message: "Destinasi berhasil dihapus dari favorit" });
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: "Destinasi berhasil dihapus dari favorit",
+      });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
 
-
 // Menambahkan Event Lokal
-app.post("/add-event-lokal",authenticateToken,async (req, res) => {
-    const { imageUrl, eventName, tentangEvent} = req.body;
+app.post(
+  "/add-event-lokal",
+  authenticateToken,
+  authorizeAdmin,
+  async (req, res) => {
+    const { imageUrl, eventName, tentangEvent } = req.body;
     const { userId } = req.user;
 
-    if ( !imageUrl || !eventName || !tentangEvent) {
+    if (!imageUrl || !eventName || !tentangEvent) {
       return res
         .status(400)
         .json({ error: true, message: "All fields are required!" });
@@ -411,26 +583,32 @@ app.get("/event-lokal", authenticateToken, async (req, res) => {
 });
 
 // Bagian Ganti Password
-app.post('/ganti-password', authenticateToken, async (req, res) => {
+app.post("/ganti-password", authenticateToken, async (req, res) => {
   const { passwordLama, passwordBaru } = req.body;
   const { userId } = req.user;
   // const isUser = await User.findOne({ _id: userId });
   // Validasi input
   if (!passwordLama || !passwordBaru) {
-    return res.status(400).json({ error: true, message: 'Password lama dan baru diperlukan.' });
+    return res
+      .status(400)
+      .json({ error: true, message: "Password lama dan baru diperlukan." });
   }
 
   try {
     // Cari user berdasarkan ID
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ error: true, message: 'User tidak ditemukan.' });
+      return res
+        .status(404)
+        .json({ error: true, message: "User tidak ditemukan." });
     }
 
     // Periksa apakah password lama sesuai
     const isMatch = await bcrypt.compare(passwordLama, user.password);
     if (!isMatch) {
-      return res.status(400).json({ error: true, message: 'Password lama tidak sesuai.' });
+      return res
+        .status(400)
+        .json({ error: true, message: "Password lama tidak sesuai." });
     }
 
     // Hash password baru
@@ -440,15 +618,17 @@ app.post('/ganti-password', authenticateToken, async (req, res) => {
     user.password = hashedPassword;
     await user.save();
 
-    res.status(200).json({ success: true, message: 'Password berhasil diperbarui.' });
+    res
+      .status(200)
+      .json({ success: true, message: "Password berhasil diperbarui." });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
 
 // Menambahkan Bagian Log-Out
-app.post('/logout', authenticateToken, (req, res) => {
-  res.status(200).json({ success: true, message: 'Berhasil log-out' });
+app.post("/logout", authenticateToken, (req, res) => {
+  res.status(200).json({ success: true, message: "Berhasil log-out" });
 });
 
 app.listen(2000);

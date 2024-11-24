@@ -7,6 +7,7 @@ const userSchema = new Schema({
   PhoneNum : {type :String, require: true },
   password: { type: String, require: true },
   createOn: { type: Date, default: Date.now },
+  role: { type: String, enum: ["user", "admin"], default: "user" }, // Default "user"
   favorit: [{ type: mongoose.Schema.Types.ObjectId, ref: "TempatWisata" }], // Tambahkan favorit di model user
 });
 

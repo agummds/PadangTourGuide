@@ -1,20 +1,23 @@
-const jwt = require('jsonwebtoken')
+const jwt = require("jsonwebtoken");
 
-function authenticateToken(req,res,next){
-    const authHeader = req.headers ["authorization"];
-    const token = authHeader && authHeader.split (" ")[1];
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-    // Jika tidak ada Token maka unauthorized
-    if (!token) return res.sendStatus(401);
-    
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user)=>{
-        // Ketika Token Invalid, Maka akan 401
-        if(err) return res.sendStatus(401);
-        req.user = user;
-        next();
-    });
+  if (!token) return res.sendStatus(401);
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user; // Menyimpan payload ke dalam req.user
+    next();
+  });
 }
-module.exports = {
-    authenticateToken,
-};
-//const { authenticateToken } = requiere("./utilities");
+
+function authorizeAdmin(req, res, next) {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: true, message: 'Akses ditolak. Hanya admin yang diizinkan.' });
+  }
+  next();
+}
+
+module.exports = { authenticateToken, authorizeAdmin };
