@@ -240,6 +240,32 @@ app.post("/add-tempat-wisata", authenticateToken, async (req, res) => {
 });
 
 // GET All Tempat Wisata
+app.get("/tempat-wisata", authenticateToken, async (req, res) => {
+  try {
+    // Ambil semua tempat wisata dari database
+    const tempatWisata = await TempatWisata.find();
+
+    // Jika tidak ada data
+    if (!tempatWisata || tempatWisata.length === 0) {
+      return res
+        .status(404)
+        .json({ error: true, message: "Tidak ada tempat wisata ditemukan." });
+    }
+
+    // Kirim respons dengan daftar tempat wisata
+    res.status(200).json({
+      success: true,
+      message: "Daftar tempat wisata berhasil diambil.",
+      data: tempatWisata,
+    });
+  } catch (error) {
+    // Tangani error
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+
+// POST Tempat Wisata Favourite
 app.post("/add-favorite", authenticateToken, async (req, res) => {
   const { tempatWisataId } = req.body;
   const { userId } = req.user;
