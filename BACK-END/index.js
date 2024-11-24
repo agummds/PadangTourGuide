@@ -345,5 +345,13 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
   }
 });
 
+
+
+
+// Menambahkan Bagian Log-Out
+app.post('/logout', authenticateToken, (req, res) => {
+  res.status(200).json({ success: true, message: 'Berhasil log-out' });
+});
+
 app.listen(2000);
 module.exports = app;
