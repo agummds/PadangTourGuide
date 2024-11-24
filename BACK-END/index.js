@@ -348,10 +348,7 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
 
 
 // Menambahkan Event Lokal
-app.post(
-  "/add-event-lokal",
-  authenticateToken,
-  async (req, res) => {
+app.post("/add-event-lokal",authenticateToken,async (req, res) => {
     const { imageUrl, eventName, tentangEvent} = req.body;
     const { userId } = req.user;
 
@@ -387,6 +384,31 @@ app.post(
     }
   }
 );
+
+// Melihat Semua Event Lokal
+app.get("/event-lokal", authenticateToken, async (req, res) => {
+  try {
+    // Ambil semua tempat wisata dari database
+    const eventLokal = await EventLokal.find();
+
+    // Jika tidak ada data
+    if (!eventLokal || eventLokal.length === 0) {
+      return res
+        .status(404)
+        .json({ error: true, message: "Event lokal tidak ditemukan." });
+    }
+
+    // Kirim respons dengan daftar event lokal
+    res.status(200).json({
+      success: true,
+      message: "Daftar event lokal berhasil diambil.",
+      data: eventLokal,
+    });
+  } catch (error) {
+    // Tangani error
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
 
 // Bagian Ganti Password
 app.post('/ganti-password', authenticateToken, async (req, res) => {
