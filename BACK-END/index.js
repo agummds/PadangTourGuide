@@ -345,7 +345,41 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
   }
 });
 
+// Bagian Ganti Password
+app.post('/ganti-password', authenticateToken, async (req, res) => {
+  const { passwordLama, passwordBaru } = req.body;
+  const { userId } = req.user;
+  const isUser = await User.findOne({ _id: userId });
+  // Validasi input
+  if (!passwordLama || !passwordBaru) {
+    return res.status(400).json({ error: true, message: 'Password lama dan baru diperlukan.' });
+  }
 
+  try {
+    // Cari user berdasarkan ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: true, message: 'User tidak ditemukan.' });
+    }
+
+    // Periksa apakah password lama sesuai
+    const isMatch = await bcrypt.compare(passwordLama, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: true, message: 'Password lama tidak sesuai.' });
+    }
+
+    // Hash password baru
+    const hashedPassword = await bcrypt.hash(passwordBaru, 10);
+
+    // Perbarui password di database
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Password berhasil diperbarui.' });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
 
 
 // Menambahkan Bagian Log-Out
