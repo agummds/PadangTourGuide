@@ -14,6 +14,8 @@ const NameDescription = require("./models/description-model");
 const UlasanRating = require("./models/ulasan_rating-model");
 const TempatWisata = require("./models/tempat_wisata-model");
 const EventLokal = require("./models/event-model");
+const Favourite = require("./models/favourite-model");
+
 // const User = require("./models/favourite-model");
 
 const { authenticateToken, authorizeAdmin } = require("./utilities");
@@ -61,12 +63,10 @@ app.post("/create-admin", async (req, res) => {
 
   const currentUser = await User.findById(userId);
   if (!currentUser || currentUser.role !== "admin") {
-    return res
-      .status(403)
-      .json({
-        error: true,
-        message: "Akses ditolak. Hanya admin yang dapat membuat akun admin.",
-      });
+    return res.status(403).json({
+      error: true,
+      message: "Akses ditolak. Hanya admin yang dapat membuat akun admin.",
+    });
   }
 
   if (!fullName || !PhoneNum || !email || !password || !role) {
@@ -213,7 +213,7 @@ app.post("/login", async (req, res) => {
     { userId: user._id },
     process.env.ACCESS_TOKEN_SECRET,
     {
-      expiresIn: "80h",
+      expiresIn: "100h",
     }
   );
 
@@ -287,12 +287,10 @@ app.post(
       });
       await nameDescription.save();
 
-      res
-        .status(201)
-        .json({
-          description: nameDescription,
-          message: "Berhasil Ditambahkan",
-        });
+      res.status(201).json({
+        description: nameDescription,
+        message: "Berhasil Ditambahkan",
+      });
     } catch (error) {
       res.status(500).json({ error: true, message: error.message });
     }
@@ -406,16 +404,53 @@ app.get("/tempat-wisata", authenticateToken, async (req, res) => {
 });
 
 // POST Tempat Wisata Favourite
-app.post(
-  "/add-favorite",
-  authenticateToken,
-  authorizeAdmin,
-  async (req, res) => {
-    const { tempatWisataId } = req.body;
-    const { userId } = req.user;
+app.post("/add-favorite", authenticateToken, async (req, res) => {
+  const { tempatWisataId } = req.body;
+  const { userId } = req.user;
 
-    try {
-      // Pastikan tempat wisata ada
+  try {
+    // Pastikan tempat wisata ada
+    const tempatWisata = await TempatWisata.findById(tempatWisataId);
+    if (!tempatWisata) {
+      return res
+        .status(404)
+        .json({ error: true, message: "Tempat wisata tidak ditemukan" });
+    }
+
+    // Cek apakah destinasi sudah ada di favorit
+    const existingFavourite = await Favourite.findOne({
+      userId,
+      tempatWisataId,
+    });
+    if (existingFavourite) {
+      return res.status(400).json({
+        error: true,
+        message: "Destinasi sudah ada di daftar favorit",
+      });
+    }
+
+    // Simpan ke koleksi Favourite
+    const favourite = new Favourite({ userId, tempatWisataId });
+    await favourite.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Destinasi berhasil ditambahkan ke favorit",
+      data: favourite,
+    });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+// Melihat dan Menyimpan Destinasi Favourite
+app.get("/favorites", authenticateToken, async (req, res) => {
+  const { userId } = req.user;
+  const { tempatWisataId } = req.query; // Ambil ID dari query params
+
+  try {
+    // Jika tempatWisataId diberikan, lakukan validasi dan penyimpanan
+    if (tempatWisataId) {
       const tempatWisata = await TempatWisata.findById(tempatWisataId);
       if (!tempatWisata) {
         return res
@@ -423,66 +458,36 @@ app.post(
           .json({ error: true, message: "Tempat wisata tidak ditemukan" });
       }
 
-      // Cari pengguna
-      const user = await User.findById(userId);
-      if (!user) {
-        return res
-          .status(404)
-          .json({ error: true, message: "Pengguna tidak ditemukan" });
+      // Periksa apakah destinasi sudah ada di favorit
+      const existingFavourite = await Favourite.findOne({
+        userId,
+        tempatWisataId,
+      });
+      if (!existingFavourite) {
+        // Simpan ke koleksi Favourite
+        const favourite = new Favourite({ userId, tempatWisataId });
+        await favourite.save();
       }
-
-      // Pastikan favorit terinisialisasi
-      if (!Array.isArray(user.favorit)) {
-        user.favorit = [];
-      }
-
-      // Cek apakah tempat wisata sudah ada di daftar favorit
-      if (user.favorit.includes(tempatWisataId)) {
-        return res
-          .status(400)
-          .json({
-            error: true,
-            message: "Destinasi sudah ada di daftar favorit",
-          });
-      }
-
-      // Tambahkan ke favorit
-      user.favorit.push(tempatWisataId);
-      await user.save();
-
-      res
-        .status(200)
-        .json({
-          success: true,
-          message: "Destinasi berhasil ditambahkan ke favorit",
-        });
-    } catch (error) {
-      res.status(500).json({ error: true, message: error.message });
     }
-  }
-);
 
-// Melihat Destinasi Favourite
-app.get("/favorites", authenticateToken, async (req, res) => {
-  const { userId } = req.user;
+    // Ambil daftar favorit berdasarkan userId
+    const favourites = await Favourite.find({ userId }).populate("tempatWisataId");
 
-  try {
-    // Temukan pengguna dan populate data favorit
-    const user = await User.findById(userId).populate("favorit");
-    if (!user) {
+    if (!favourites || favourites.length === 0) {
       return res
         .status(404)
-        .json({ error: true, message: "Pengguna tidak ditemukan" });
+        .json({ error: true, message: "Tidak ada destinasi favorit ditemukan" });
     }
 
     res.status(200).json({
       success: true,
-      favorites: user.favorit, // Daftar favorit sudah terisi data lengkap
+      favorites: favourites,
     });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
+
 
 // Delete Destinasi Favourite
 app.delete("/remove-favorite", authenticateToken, async (req, res) => {
@@ -490,30 +495,23 @@ app.delete("/remove-favorite", authenticateToken, async (req, res) => {
   const { userId } = req.user;
 
   try {
-    // Cari pengguna
-    const user = await User.findById(userId);
-    if (!user) {
+    // Hapus destinasi dari koleksi Favourite
+    const result = await Favourite.findOneAndDelete({ userId, tempatWisataId });
+    if (!result) {
       return res
         .status(404)
-        .json({ error: true, message: "Pengguna tidak ditemukan" });
+        .json({ error: true, message: "Favorit tidak ditemukan" });
     }
 
-    // Hapus destinasi dari daftar favorit
-    user.favorit = user.favorit.filter(
-      (id) => id.toString() !== tempatWisataId
-    );
-    await user.save();
-
-    res
-      .status(200)
-      .json({
-        success: true,
-        message: "Destinasi berhasil dihapus dari favorit",
-      });
+    res.status(200).json({
+      success: true,
+      message: "Destinasi berhasil dihapus dari favorit",
+    });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
+
 
 // Menambahkan Event Lokal
 app.post(
