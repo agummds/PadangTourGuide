@@ -59,15 +59,15 @@ app.post("/create-admin", async (req, res) => {
   }
 
   // Proses normal untuk pembuatan admin, hanya admin yang sudah login dapat mengakses
-  const { userId } = req.user;
+  // const { userId } = req.user;
 
-  const currentUser = await User.findById(userId);
-  if (!currentUser || currentUser.role !== "admin") {
-    return res.status(403).json({
-      error: true,
-      message: "Akses ditolak. Hanya admin yang dapat membuat akun admin.",
-    });
-  }
+  // const currentUser = await User.findById(userId);
+  // if (!currentUser || currentUser.role !== "admin") {
+  //   return res.status(403).json({
+  //     error: true,
+  //     message: "Akses ditolak. Hanya admin yang dapat membuat akun admin.",
+  //   });
+  // }
 
   if (!fullName || !PhoneNum || !email || !password || !role) {
     return res
@@ -623,6 +623,37 @@ app.post("/ganti-password", authenticateToken, async (req, res) => {
     res.status(500).json({ error: true, message: error.message });
   }
 });
+
+// Supaya user bisa lihat akun mereka sendiri
+// GET User Profile (Akun Sendiri)
+app.get("/me", authenticateToken, async (req, res) => {
+  const { userId } = req.user;
+
+  try {
+    // Cari user berdasarkan ID yang diambil dari token
+    const user = await User.findById(userId, "-password"); // Exclude password for security
+
+    if (!user) {
+      return res.status(404).json({
+        error: true,
+        message: "User tidak ditemukan",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Data akun berhasil diambil",
+      data: user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: true,
+      message: "Terjadi kesalahan server",
+      detail: error.message,
+    });
+  }
+});
+
 
 // Menambahkan Bagian Log-Out
 app.post("/logout", authenticateToken, (req, res) => {
